@@ -1,0 +1,31 @@
+{
+  "name": "board-insights",
+  "version": "1.0.0",
+  "description": "SANKETA: COMPREHENSIVE REQUIREMENTS & ARCHITECTURE DOCUMENT Version 1.0 Date: [Current Date] Status: Final for Development",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omkar932/board_insights.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/omkar932/board_insights/issues"
+  },
+  "homepage": "https://github.com/omkar932/board_insights#readme",
+  "devDependencies": {
+    "copy-webpack-plugin": "^13.0.1",
+    "html-webpack-plugin": "^5.6.6",
+    "webpack": "^5.105.2",
+    "webpack-cli": "^6.0.1"
+  }
+}
