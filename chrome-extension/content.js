@@ -93,6 +93,12 @@ function extractCourseName() {
 }
 
 // Inject Sanketa UI into the page
+// Global state for current view
+let currentInsightsData = null;
+let currentStudentsData = null;
+let currentView = 'summary';
+
+// Inject Sanketa UI into the page
 function injectSanketaUI() {
   if (document.getElementById('sanketa-fab')) return;
 
@@ -125,30 +131,36 @@ function injectSanketaUI() {
     #sanketa-panel {
       position: fixed;
       top: 0;
-      right: -420px;
-      width: 400px;
+      right: -520px;
+      width: 500px;
       height: 100vh;
-      background: rgba(255, 255, 255, 0.9);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       box-shadow: -10px 0 30px rgba(0, 0, 0, 0.1);
       z-index: 10000;
-      transition: right 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
       display: flex;
       flex-direction: column;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
     #sanketa-panel.open { right: 0; }
+    #sanketa-panel.expanded { width: 800px; right: 0; }
+    
     .s-header {
-      padding: 24px;
+      padding: 20px 24px;
       background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
       color: white;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      box-shadow: 0 2px 10px rgba(99, 102, 241, 0.2);
     }
-    .s-header h2 { margin: 0; font-size: 22px; font-weight: 700; }
-    .s-close {
+    .s-header h2 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+    
+    .s-header-actions { display: flex; gap: 8px; }
+    
+    .s-btn-icon {
       background: rgba(255, 255, 255, 0.2);
       border: none;
       color: white;
@@ -156,23 +168,46 @@ function injectSanketaUI() {
       height: 32px;
       border-radius: 8px;
       cursor: pointer;
-      font-size: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
     }
+    .s-btn-icon:hover { background: rgba(255, 255, 255, 0.3); }
+
     #sanketa-panel-content {
       flex: 1;
       overflow-y: auto;
       padding: 24px;
+      scroll-behavior: smooth;
     }
+
     .s-card {
       background: white;
-      border-radius: 12px;
+      border-radius: 16px;
       padding: 20px;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
       box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
       border: 1px solid #f1f5f9;
     }
-    .s-card h4 { margin: 0 0 12px 0; color: #4338ca; display: flex; align-items: center; gap: 8px; }
-    .s-card p { margin: 4px 0; color: #64748b; font-size: 14px; }
+
+    /* Report Specific Styles */
+    .s-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    .s-table th { text-align: left; font-size: 11px; color: #94a3b8; text-transform: uppercase; padding: 12px 8px; border-bottom: 1px solid #f1f5f9; }
+    .s-table td { padding: 12px 8px; border-bottom: 1px solid #f8fafc; font-size: 13px; vertical-align: middle; }
+    
+    .s-chart-row { display: flex; align-items: flex-end; gap: 8px; height: 120px; padding-top: 20px; }
+    .s-bar { flex: 1; min-width: 12px; background: #6366f1; border-radius: 4px 4px 0 0; position: relative; }
+    .s-bar:hover::after {
+      content: attr(data-val);
+      position: absolute;
+      top: -20px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 10px;
+      font-weight: 700;
+      color: #1e293b;
+    }
   `;
   document.head.appendChild(style);
 
@@ -189,7 +224,7 @@ function injectSanketaUI() {
   document.getElementById('sanketa-fab-button').addEventListener('click', openSanketaPanel);
 }
 
-// Open / Create Panel
+// Open / Close Panel
 function openSanketaPanel() {
   let panel = document.getElementById('sanketa-panel');
   if (!panel) {
@@ -197,127 +232,132 @@ function openSanketaPanel() {
     panel.id = 'sanketa-panel';
     panel.innerHTML = `
       <div class="s-header">
-        <h2>Sanketa</h2>
-        <button class="s-close">&times;</button>
+        <div style="display:flex; align-items:center; gap:12px;">
+          <button id="sanketa-back-btn" class="s-btn-icon" style="display:none;" title="Back to Summary">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+          </button>
+          <h2 id="sanketa-panel-title">Sanketa</h2>
+        </div>
+        <div class="s-header-actions">
+          <button id="sanketa-panel-close" class="s-btn-icon" title="Close Panel">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
       </div>
       <div id="sanketa-panel-content">
-        <div style="text-align:center; padding: 40px;">
+        <div style="text-align:center; padding: 40px 20px;">
           <div style="width:40px; height:40px; border:3px solid #f3f3f3; border-top:3px solid #6366f1; border-radius:50%; animation: spin 1s linear infinite; margin:0 auto 16px;"></div>
-          <p style="color:#64748b;">Analyzing Gradebook...</p>
+          <p style="color:#64748b; font-size:14px; margin-top:16px;">Analyzing gradebook data...</p>
         </div>
       </div>
     `;
     document.body.appendChild(panel);
-    panel.querySelector('.s-close').addEventListener('click', () => panel.classList.remove('open'));
+    
+    document.getElementById('sanketa-panel-close').onclick = () => panel.classList.remove('open', 'expanded');
+    document.getElementById('sanketa-back-btn').onclick = () => setView('summary');
     
     // Inject spin animation
     const spinStyle = document.createElement('style');
     spinStyle.textContent = '@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }';
     document.head.appendChild(spinStyle);
   }
-
-  const isOpen = panel.classList.contains('open');
-  if (isOpen) {
-    panel.classList.remove('open');
+  
+  panel.classList.add('open');
+  if (currentInsightsData) {
+    setView(currentView);
   } else {
-    panel.classList.add('open');
     extractGradebookData();
   }
 }
 
-// Close Sanketa panel
-function closeSanketaPanel() {
+// View Switching
+function setView(view) {
+  currentView = view;
   const panel = document.getElementById('sanketa-panel');
-  if (panel) panel.classList.remove('open');
+  const title = document.getElementById('sanketa-panel-title');
+  const backBtn = document.getElementById('sanketa-back-btn');
+  
+  if (view === 'report') {
+    panel.classList.add('expanded');
+    title.textContent = 'Full Analysis Report';
+    backBtn.style.display = 'flex';
+    renderDetailedReport(currentInsightsData, currentStudentsData);
+  } else {
+    panel.classList.remove('expanded');
+    title.textContent = 'Sanketa Summary';
+    backBtn.style.display = 'none';
+    renderSummary(currentInsightsData, currentStudentsData);
+  }
 }
 
 // Extract gradebook data from the page
 async function extractGradebookData() {
   try {
-    console.log('Extracting gradebook data...');
-    
-    // Parse the HTML table
-    const table = document.getElementById('gradebookTable');
-    if (!table) {
-      throw new Error('Gradebook table not found');
-    }
-    
-    const headers = Array.from(table.querySelectorAll('thead th')).map(th => th.textContent.trim());
-    const rows = Array.from(table.querySelectorAll('tbody tr'));
-    
-    // assignments are columns 3 onwards (0-indexed)
-    // Format: "Quiz 1 (100)" -> name: "Quiz 1", max: 100
-    const assignments = headers.slice(2).map((header, index) => {
-      const match = header.match(/(.*)\((\d+)\)/);
-      return {
-        id: `A${index + 1}`,
-        name: match ? match[1].trim() : header,
-        max_score: match ? parseFloat(match[2]) : 100,
-        due_date: null
-      };
-    });
-    
-    const grades = [];
+    const table = document.getElementById('gradebookTable') || document.querySelector('table');
+    if (!table) throw new Error('Gradebook table not found');
+
+    const assignments = [];
     const students = [];
-    
+    const grades = [];
+
+    // Extract assignments from header
+    const headers = table.querySelectorAll('thead th');
+    headers.forEach((th, index) => {
+      if (index < 2) return; // Skip name columns
+      const text = th.textContent.trim();
+      const maxScoreMatch = text.match(/\((\d+)\)/);
+      const maxScore = maxScoreMatch ? parseFloat(maxScoreMatch[1]) : 100;
+      
+      assignments.push({
+        id: `A${index - 1}`,
+        name: text.split('(')[0].trim(),
+        max_score: maxScore
+      });
+    });
+
+    // Extract students and grades
+    const rows = table.querySelectorAll('tbody tr');
     rows.forEach((row, rowIndex) => {
       const cells = row.querySelectorAll('td');
+      if (cells.length < 3) return;
+
       const lastName = cells[0].textContent.trim();
       const firstName = cells[1].textContent.trim();
       const studentId = `S${rowIndex + 1}`;
+      students.push({ id: studentId, name: `${firstName} ${lastName}` });
       
-      students.push({
-        id: studentId,
-        name: `${firstName} ${lastName}`
-      });
-      
-      // Process grade cells
       cells.forEach((cell, cellIndex) => {
-        if (cellIndex < 2) return; // Skip name columns
-        
-        const assignmentIndex = cellIndex - 2;
-        const assignment = assignments[assignmentIndex];
-        const scoreText = cell.textContent.trim();
-        const score = parseFloat(scoreText) || 0;
+        if (cellIndex < 2) return;
+        const score = parseFloat(cell.textContent.trim()) || 0;
+        const assignment = assignments[cellIndex - 2];
         
         grades.push({
           student_id: studentId,
           assignment_id: assignment.id,
           score: score,
-          max_score: assignment.max_score,
-          submitted_at: new Date().toISOString(),
-          due_date: null
+          max_score: assignment.max_score
         });
       });
     });
-    
+
     const gradebookData = {
       courseId: extractCourseId() || 'MOCK_101',
-      courseName: extractCourseName() || 'Mock Course',
       students,
       assignments,
-      grades,
-      extractedAt: new Date().toISOString()
+      grades
     };
-    
-    console.log('Gradebook data extracted:', gradebookData);
-    
-    // Compute insights (send wrapper object expected by background)
+
     const insights = await computeInsights({
       courseId: gradebookData.courseId,
       gradebook: gradebookData
     });
-    
-    // Display insights
-    displayInsights(insights, gradebookData.students);
-    
+
+    currentInsightsData = insights;
+    currentStudentsData = students;
+    setView('summary');
+
   } catch (error) {
-    console.error('Error extracting gradebook data:', error);
-    // fallback to display error in panel
-    const content = document.getElementById('sanketa-panel-content');
-    if(content) {
-      content.innerHTML = `<div style="padding:20px; color:red">Error: ${error.message}</div>`;
-    }
+    displayError(error.message);
   }
 }
 
@@ -337,108 +377,114 @@ async function computeInsights(gradebookData) {
   });
 }
 
-// Display insights in the panel
-function displayInsights(insights, students) {
+// Render Summary View
+function renderSummary(insights, students) {
   const content = document.getElementById('sanketa-panel-content');
-  if (!content) return;
-
   const reliabilityColor = insights.assessmentQuality.reliability > 0.8 ? '#10b981' : (insights.assessmentQuality.reliability > 0.6 ? '#f59e0b' : '#ef4444');
+
+  const atRiskCount = insights.earlyIntervention.high_risk.length + insights.earlyIntervention.medium_risk.length;
+
+  content.innerHTML = `
+    <div style="margin-bottom: 24px;">
+      <h3 style="margin:0 0 16px 0; font-size:14px; text-transform:uppercase; color:#64748b; font-weight:700;">Class Performance</h3>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div class="s-card" style="margin-bottom:0; background:#f8fafc;">
+          <div style="font-size:10px; font-weight:700; color:#94a3b8; margin-bottom:4px;">RELIABILITY</div>
+          <div style="font-size:24px; font-weight:800; color:${reliabilityColor};">${(insights.assessmentQuality.reliability * 100).toFixed(0)}%</div>
+        </div>
+        <div class="s-card" style="margin-bottom:0; background:#f8fafc;">
+          <div style="font-size:10px; font-weight:700; color:#94a3b8; margin-bottom:4px;">AT RISK</div>
+          <div style="font-size:24px; font-weight:800; color:#ef4444;">${atRiskCount}</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-bottom: 24px;">
+      <h3 style="margin:0 0 16px 0; font-size:14px; text-transform:uppercase; color:#64748b; font-weight:700;">Insights Summary</h3>
+      <div class="s-card" style="border-left: 4px solid #ef4444; margin-bottom:12px;">
+        <h4 style="margin:0; font-size:14px;">🔥 Early Intervention</h4>
+        <p style="margin-top:8px;">${atRiskCount > 0 ? `<b>${atRiskCount}</b> students are showing significant performance variations.` : 'Stability detected across all student performance tracks.'}</p>
+      </div>
+      
+      <div id="open-full-report" class="s-card" style="cursor:pointer; background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); color:white; border:none; text-align:center; transition: transform 0.2s;">
+        <h4 style="margin:0; color:white; justify-content:center; gap:12px;">
+           <span>Analyze Full Report</span> 
+           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
+        </h4>
+      </div>
+    </div>
+  `;
   
-  // Prepare student data with safe fallbacks for WASM fields
-  const studentDetails = students.map(student => {
+  const reportBtn = document.getElementById('open-full-report');
+  reportBtn.onmouseover = () => reportBtn.style.transform = 'translateY(-2px)';
+  reportBtn.onmouseout = () => reportBtn.style.transform = 'translateY(0)';
+  reportBtn.onclick = () => setView('report');
+}
+
+// Render Detailed Report View
+function renderDetailedReport(insights, students) {
+  const content = document.getElementById('sanketa-panel-content');
+  
+  const studentRows = students.map(student => {
     const risk = insights.earlyIntervention.high_risk.find(r => r.student_id === student.id) || 
                  insights.earlyIntervention.medium_risk.find(r => r.student_id === student.id) ||
                  insights.earlyIntervention.low_risk.find(r => r.student_id === student.id);
-    const patternObj = insights.performancePatterns.student_patterns.find(p => p.student_id === student.id);
     const progression = insights.learningProgression.student_progressions.find(p => p.student_id === student.id);
     
-    // Extract trait from patterns array safely
-    let trait = 'Consistent';
-    if (patternObj && patternObj.patterns && patternObj.patterns.length > 0) {
-      trait = patternObj.patterns[0].pattern_type.replace('_', ' ');
-    }
-    
-    return {
-      name: student.name,
-      riskLevel: risk ? risk.risk_level : 'low',
-      trait: trait,
-      velocity: progression ? progression.metrics.velocity : 0,
-      factors: risk ? risk.factors : []
-    };
-  });
-
-  // Get unique overall traits for the cloud
-  const allTraits = [...new Set(insights.performancePatterns.student_patterns.flatMap(p => 
-    p.patterns.map(pat => pat.pattern_type.replace('_', ' '))
-  ))].slice(0, 4);
+    return `
+      <tr>
+        <td style="font-weight:600; color:#1e293b;">${student.name}</td>
+        <td>
+          <span style="padding:4px 10px; border-radius:12px; font-size:10px; font-weight:800; text-transform:uppercase; display:inline-block;
+            background:${risk.risk_level === 'high' ? '#fee2e2' : (risk.risk_level === 'medium' ? '#fef3c7' : '#d1fae5')}; 
+            color:${risk.risk_level === 'high' ? '#b91c1c' : (risk.risk_level === 'medium' ? '#b45309' : '#047857')}">
+            ${risk.risk_level}
+          </span>
+        </td>
+        <td style="color:${progression.metrics.velocity >= 0 ? '#10b981' : '#ef4444'}; font-weight:700;">
+          ${progression.metrics.velocity >= 0 ? '+' : ''}${progression.metrics.velocity.toFixed(1)}
+        </td>
+        <td style="font-weight:600;">${progression.metrics.projected_performance.toFixed(0)}%</td>
+        <td style="font-size:12px; color:#64748b; line-height:1.4; max-width:200px;">${risk.recommendations[0]}</td>
+      </tr>
+    `;
+  }).join('');
 
   content.innerHTML = `
-    <div class="sanketa-insights">
-      <!-- CLASS HEALTH DASHBOARD -->
-      <div style="margin-bottom: 24px;">
-        <h3 style="margin:0 0 16px 0; font-size:16px; color:#1e293b; font-weight:700; text-transform:uppercase; letter-spacing:0.05em;">Class Performance</h3>
-        
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom:12px;">
-          <div class="s-card" style="margin-bottom:0; padding:16px; background:#f8fafc;">
-            <div style="font-size:11px; color:#64748b; font-weight:600; margin-bottom:4px;">LEARNING TREND</div>
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span style="font-size:16px; font-weight:700; color:#4338ca; text-transform:capitalize;">${insights.learningProgression.class_average_trend}</span>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${insights.learningProgression.class_average_trend === 'declining' ? '#ef4444' : '#10b981'}" stroke-width="3">
-                ${insights.learningProgression.class_average_trend === 'declining' ? '<path d="M23 18l-9-9-5 5-9-9M23 18h-6M23 18v-6"/>' : '<path d="M23 6l-9 9-5-5-9 9M23 6h-6M23 6v6"/>'}
-              </svg>
-            </div>
-          </div>
-          
-          <div class="s-card" style="margin-bottom:0; padding:16px; background:#f8fafc;">
-            <div style="font-size:11px; color:#64748b; font-weight:600; margin-bottom:4px;">RELIABILITY</div>
-            <div style="font-size:18px; font-weight:700; color:${reliabilityColor};">${(insights.assessmentQuality.reliability * 100).toFixed(0)}%</div>
-          </div>
-        </div>
-
-        <div class="s-card" style="padding:16px; background:#f8fafc;">
-          <div style="font-size:11px; color:#64748b; font-weight:600; margin-bottom:8px;">COMMON BEHAVIORS</div>
-          <div style="display:flex; flex-wrap:wrap; gap:6px;">
-            ${allTraits.map(trait => `<span style="background:#e0e7ff; color:#4338ca; padding:4px 10px; border-radius:6px; font-size:11px; font-weight:600; text-transform:capitalize;">${trait}</span>`).join('')}
-          </div>
+    <div style="display:grid; grid-template-columns: 1fr; gap:24px;">
+      <div>
+        <h3 style="margin:0 0 16px 0; font-size:14px; text-transform:uppercase; color:#64748b; font-weight:700;">Curriculum Difficulty Heatmap</h3>
+        <div class="s-card" style="padding:24px 32px;">
+           <div class="s-chart-row">
+             ${insights.chapterDifficulty.chapters.slice(0, 8).map(ch => `
+               <div class="s-bar" style="height:${ch.avg_score}%" data-val="${ch.avg_score.toFixed(0)}%"></div>
+             `).join('')}
+           </div>
+           <div style="display:flex; justify-content:space-between; margin-top:12px; font-size:10px; color:#94a3b8; font-weight:700; text-transform:uppercase;">
+             <span>Chapter 1</span>
+             <span>Chapter 8</span>
+           </div>
         </div>
       </div>
 
-      <!-- STUDENT LIST -->
-      <div style="margin-bottom: 24px;">
-        <h3 style="margin:0 0 16px 0; font-size:16px; color:#1e293b; font-weight:700; text-transform:uppercase; letter-spacing:0.05em;">Student Records</h3>
-        <div style="display: flex; flex-direction: column; gap: 8px;">
-          ${studentDetails.map(s => `
-            <div class="s-card" style="margin-bottom:0; padding:14px; border-left: 4px solid ${s.riskLevel === 'high' ? '#ef4444' : (s.riskLevel === 'medium' ? '#f59e0b' : '#10b981')}; background:white;">
-              <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div style="flex:1;">
-                  <div style="font-weight:600; color:#1e293b; font-size:14px;">${s.name}</div>
-                  <div style="font-size:11px; color:#64748b; margin-top:2px; display:flex; gap:8px;">
-                    <span style="text-transform:capitalize;">${s.trait}</span>
-                    <span>•</span>
-                    <span style="color:${s.velocity >= 0 ? '#059669' : '#dc2626'}">${s.velocity >= 0 ? '+' : ''}${s.velocity.toFixed(1)} velocity</span>
-                  </div>
-                </div>
-                <div style="text-align:right;">
-                  <div style="font-size:9px; font-weight:800; text-transform:uppercase; padding:2px 6px; border-radius:4px; 
-                    background:${s.riskLevel === 'high' ? '#fee2e2' : (s.riskLevel === 'medium' ? '#fef3c7' : '#d1fae5')}; 
-                    color:${s.riskLevel === 'high' ? '#b91c1c' : (s.riskLevel === 'medium' ? '#b45309' : '#047857')}">
-                    ${s.riskLevel}
-                  </div>
-                </div>
-              </div>
-            </div>
-          `).join('')}
+      <div>
+        <h3 style="margin:0 0 16px 0; font-size:14px; text-transform:uppercase; color:#64748b; font-weight:700;">Student Performance Matrix</h3>
+        <div class="s-card" style="padding:0; overflow:hidden;">
+          <table class="s-table">
+            <thead>
+              <tr>
+                <th style="padding-left:24px;">Student</th>
+                <th>Risk</th>
+                <th>Velocity</th>
+                <th>Proj.</th>
+                <th style="padding-right:24px;">Recommendation</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${studentRows}
+            </tbody>
+          </table>
         </div>
-      </div>
-
-      <!-- TOPICS -->
-      <div class="s-card" style="background:#4338ca; border:none;">
-        <h4 style="color:white; font-size:13px; margin-bottom:8px;"><span>📚</span> Hardest Topics</h4>
-        <p style="color:rgba(255,255,255,0.8); font-size:13px; margin:0;">
-          ${insights.chapterDifficulty.hardest_chapter ? 
-            `Section <b style="color:white;">${insights.chapterDifficulty.hardest_chapter}</b> requires attention.` : 
-            'All course sections performing within expected range.'}
-        </p>
       </div>
     </div>
   `;
@@ -447,16 +493,33 @@ function displayInsights(insights, students) {
 // Display error
 function displayError(message) {
   const content = document.getElementById('sanketa-panel-content');
-  if (!content) return;
+  if (content) {
+    content.innerHTML = `
+      <div style="text-align:center; padding: 40px 20px;">
+        <div style="font-size:40px; margin-bottom:16px;">⚠️</div>
+        <h3 style="margin:0; color:#1e293b; font-size:18px;">Analysis Failed</h3>
+        <p style="color:#64748b; font-size:14px; margin:12px 0 24px;">${message}</p>
+        <button id="sanketa-retry" style="background:#6366f1; color:white; border:none; padding:10px 24px; border-radius:8px; font-weight:600; cursor:pointer;">Retry Extraction</button>
+      </div>
+    `;
+    document.getElementById('sanketa-retry').onclick = () => extractGradebookData();
+  }
+}
 
-  content.innerHTML = `
-    <div style="text-align:center; padding: 40px 20px;">
-      <div style="font-size:40px; margin-bottom:16px;">⚠️</div>
-      <h3 style="margin:0; color:#1e293b; font-size:18px;">Analysis Failed</h3>
-      <p style="color:#64748b; font-size:14px; margin:12px 0 24px;">${message}</p>
-      <button onclick="location.reload()" style="background:#6366f1; color:white; border:none; padding:10px 24px; border-radius:8px; font-weight:600; cursor:pointer;">Retry Analysis</button>
-    </div>
-  `;
+// Compute insights via background service worker
+async function computeInsights(gradebookData) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({
+      type: 'COMPUTE_INSIGHTS',
+      data: gradebookData
+    }, (response) => {
+      if (response && response.success) {
+        resolve(response.data);
+      } else {
+        reject(new Error(response ? response.error : 'Computation failed'));
+      }
+    });
+  });
 }
 
 // Initialize when page loads
@@ -466,7 +529,7 @@ if (document.readyState === 'loading') {
   detectGradebookPage();
 }
 
-// Also check when URL changes (for single-page apps)
+// Listen for URL changes
 let lastUrl = location.href;
 new MutationObserver(() => {
   const url = location.href;
@@ -474,4 +537,5 @@ new MutationObserver(() => {
     lastUrl = url;
     detectGradebookPage();
   }
-}).observe(document, { subtree: true, childList: true });
+}).observe(document, {subtree: true, childList: true});
+
