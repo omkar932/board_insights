@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Sanketa - Educational Analytics",
-  "version": "0.1.0",
-  "description": "AI-powered educational analytics for Blackboard Learn",
+  "name": "BoardInsight Analytics",
+  "version": "1.1.0",
+  "description": "Transformative educational analytics for Blackboard Learn.",
   "permissions": ["activeTab", "storage", "scripting", "alarms"],
   "host_permissions": ["*://*.blackboard.com/*", "*://*/webapps/gradebook/*", "http://localhost:8000/*"],
   "background": {

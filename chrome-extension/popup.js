@@ -1,4 +1,4 @@
-// Sanketa Popup Script
+// BoardInsight Popup Script
 
 document.addEventListener('DOMContentLoaded', async () => {
   await loadStatus();
@@ -53,6 +53,6 @@ function setupEventListeners() {
   // Help link
   document.getElementById('help-link').addEventListener('click', (e) => {
     e.preventDefault();
-    chrome.tabs.create({ url: 'https://github.com/sanketa/docs' });
+    chrome.tabs.create({ url: 'https://github.com/omkar932/board_insights/tree/main/docs' });
   });
 }
