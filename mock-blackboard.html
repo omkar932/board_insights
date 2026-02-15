@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mock Blackboard Gradebook - Sanketa Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f0f0f0; }
+        .branding { background: #333; color: white; padding: 10px; margin-bottom: 20px; }
+        .gradebook-container { background: white; padding: 20px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .course-header { border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <div class="branding">Blackboard Learn (Mock)</div>
+
+    <!-- MIMIC BLACKBOARD STRUCTURE -->
+    <div id="courseMenuPalette_paletteTitleHeading">
+        <span id="courseId">CS101_2024</span>
+        <span id="courseName">Introduction to Artificial Intelligence</span>
+    </div>
+
+    <!-- URL trigger needed: must contain 'gradebook' or 'grade' -->
+    <div class="gradebook-container" id="gradebook-main">
+        <div class="course-header">
+            <h2>Full Grade Center</h2>
+        </div>
+
+        <table id="gradebookTable">
+            <thead>
+                <tr>
+                    <th>Last Name</th>
+                    <th>First Name</th>
+                    <th>Quiz 1 (100)</th>
+                    <th>Quiz 2 (100)</th>
+                    <th>Midterm (100)</th>
+                    <th>Final (100)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Doe</td><td>John</td>
+                    <td>85</td><td>88</td><td>90</td><td>92</td>
+                </tr>
+                <tr>
+                    <td>Smith</td><td>Jane</td>
+                    <td>60</td><td>65</td><td>55</td><td><span class="needs-grading">60</span></td>
+                </tr>
+                <tr>
+                    <td>Brown</td><td>Charlie</td>
+                    <td>95</td><td>92</td><td>98</td><td>96</td>
+                </tr>
+                <tr>
+                    <td>Risk</td><td>Student</td>
+                    <td>40</td><td>35</td><td>45</td><td>0</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Script to simulate Blackboard environment variables if needed -->
+    <script>
+        // Detection logic in content.js looks for URL patterns or specific DOM elements
+        // The URL needs to match the manifest pattern
+        // We'll instruct the user on how to run this.
+    </script>
+</body>
+</html>

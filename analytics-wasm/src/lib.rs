@@ -609,6 +609,412 @@ fn rate_item_quality(difficulty: f64, discrimination: f64) -> (String, String) {
     )
 }
 
+// ============================================================================
+// INSIGHT 4: Learning Progression Analysis
+// ============================================================================
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ProgressionMetrics {
+    pub overall_trend: String,      // "improving", "declining", "stable"
+    pub trend_strength: f64,         // 0-1 (how strong the trend is)
+    pub velocity: f64,               // Points per assignment
+    pub momentum: String,            // "accelerating", "decelerating", "steady"
+    pub current_performance: f64,    // Current average (0-100)
+    pub projected_performance: f64,  // Projected next score
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct LearningProgressionResult {
+    pub student_progressions: Vec<StudentProgression>,
+    pub class_average_trend: String,
+    pub class_velocity: f64,
+    pub total_students: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct StudentProgression {
+    pub student_id: String,
+    pub metrics: ProgressionMetrics,
+}
+
+#[wasm_bindgen]
+pub fn analyze_learning_progression(
+    grades_json: &str,
+    assignments_json: &str,
+) -> Result<String, JsValue> {
+    // Parse input data
+    let grades: Vec<Grade> = serde_json::from_str(grades_json)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse grades: {}", e)))?;
+    
+    let assignments: Vec<Assignment> = serde_json::from_str(assignments_json)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse assignments: {}", e)))?;
+    
+    // Group grades by student
+    let mut student_grades: std::collections::HashMap<String, Vec<&Grade>> = 
+        std::collections::HashMap::new();
+    
+    for grade in &grades {
+        student_grades
+            .entry(grade.student_id.clone())
+            .or_insert_with(Vec::new)
+            .push(grade);
+    }
+    
+    // Analyze each student's progression
+    let mut student_progressions: Vec<StudentProgression> = Vec::new();
+    let mut all_velocities: Vec<f64> = Vec::new();
+    
+    for (student_id, student_grade_list) in student_grades.iter() {
+        let metrics = calculate_progression_metrics(student_grade_list, &assignments);
+        all_velocities.push(metrics.velocity);
+        
+        student_progressions.push(StudentProgression {
+            student_id: student_id.clone(),
+            metrics,
+        });
+    }
+    
+    // Calculate class-level metrics
+    let class_velocity = if !all_velocities.is_empty() {
+        all_velocities.iter().sum::<f64>() / all_velocities.len() as f64
+    } else {
+        0.0
+    };
+    
+    let class_average_trend = if class_velocity > 1.0 {
+        "improving".to_string()
+    } else if class_velocity < -1.0 {
+        "declining".to_string()
+    } else {
+        "stable".to_string()
+    };
+    
+    let result = LearningProgressionResult {
+        total_students: student_progressions.len(),
+        class_average_trend,
+        class_velocity,
+        student_progressions,
+    };
+    
+    serde_json::to_string(&result)
+        .map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
+}
+
+// Calculate progression metrics for a student
+fn calculate_progression_metrics(
+    grades: &[&Grade],
+    _assignments: &[Assignment],
+) -> ProgressionMetrics {
+    if grades.len() < 2 {
+        return ProgressionMetrics {
+            overall_trend: "insufficient_data".to_string(),
+            trend_strength: 0.0,
+            velocity: 0.0,
+            momentum: "unknown".to_string(),
+            current_performance: 0.0,
+            projected_performance: 0.0,
+        };
+    }
+    
+    // Convert grades to percentages and sort by time (assuming order)
+    let scores: Vec<f64> = grades.iter()
+        .map(|g| (g.score / g.max_score) * 100.0)
+        .collect();
+    
+    // Calculate linear regression for trend
+    let n = scores.len() as f64;
+    let x_values: Vec<f64> = (0..scores.len()).map(|i| i as f64).collect();
+    
+    let x_mean = x_values.iter().sum::<f64>() / n;
+    let y_mean = scores.iter().sum::<f64>() / n;
+    
+    let mut numerator = 0.0;
+    let mut denominator = 0.0;
+    
+    for i in 0..scores.len() {
+        let x_diff = x_values[i] - x_mean;
+        let y_diff = scores[i] - y_mean;
+        numerator += x_diff * y_diff;
+        denominator += x_diff * x_diff;
+    }
+    
+    let slope = if denominator != 0.0 {
+        numerator / denominator
+    } else {
+        0.0
+    };
+    
+    // Velocity = slope (points per assignment)
+    let velocity = slope;
+    
+    // Determine trend
+    let overall_trend = if velocity > 2.0 {
+        "improving".to_string()
+    } else if velocity < -2.0 {
+        "declining".to_string()
+    } else {
+        "stable".to_string()
+    };
+    
+    // Trend strength (R-squared approximation)
+    let trend_strength = (velocity.abs() / 10.0).min(1.0);
+    
+    // Calculate momentum (acceleration)
+    let momentum = if scores.len() >= 3 {
+        let recent_slope = calculate_recent_slope(&scores, 3);
+        let overall_slope = velocity;
+        
+        if recent_slope > overall_slope + 1.0 {
+            "accelerating".to_string()
+        } else if recent_slope < overall_slope - 1.0 {
+            "decelerating".to_string()
+        } else {
+            "steady".to_string()
+        }
+    } else {
+        "steady".to_string()
+    };
+    
+    // Current performance (last score)
+    let current_performance = *scores.last().unwrap_or(&0.0);
+    
+    // Projected performance (linear extrapolation)
+    let projected_performance = (current_performance + velocity).max(0.0).min(100.0);
+    
+    ProgressionMetrics {
+        overall_trend,
+        trend_strength,
+        velocity,
+        momentum,
+        current_performance,
+        projected_performance,
+    }
+}
+
+// Calculate slope for recent N scores
+fn calculate_recent_slope(scores: &[f64], n: usize) -> f64 {
+    if scores.len() < n {
+        return 0.0;
+    }
+    
+    let recent: Vec<f64> = scores.iter()
+        .rev()
+        .take(n)
+        .copied()
+        .collect();
+    
+    if recent.len() < 2 {
+        return 0.0;
+    }
+    
+    let x_values: Vec<f64> = (0..recent.len()).map(|i| i as f64).collect();
+    let x_mean = x_values.iter().sum::<f64>() / recent.len() as f64;
+    let y_mean = recent.iter().sum::<f64>() / recent.len() as f64;
+    
+    let mut numerator = 0.0;
+    let mut denominator = 0.0;
+    
+    for i in 0..recent.len() {
+        let x_diff = x_values[i] - x_mean;
+        let y_diff = recent[i] - y_mean;
+        numerator += x_diff * y_diff;
+        denominator += x_diff * x_diff;
+    }
+    
+    if denominator != 0.0 {
+        numerator / denominator
+    } else {
+        0.0
+    }
+}
+
+// ============================================================================
+// INSIGHT 5: Performance Patterns Analysis
+// ============================================================================
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PerformancePattern {
+    pub pattern_type: String,       // "consistent", "volatile", "improving_streak", "declining_streak"
+    pub description: String,
+    pub confidence: f64,             // 0-1
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct StudentPattern {
+    pub student_id: String,
+    pub consistency_score: f64,      // 0-1 (1 = very consistent)
+    pub current_streak: i32,         // Positive = improving, negative = declining
+    pub longest_streak: i32,
+    pub patterns: Vec<PerformancePattern>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PerformancePatternsResult {
+    pub student_patterns: Vec<StudentPattern>,
+    pub class_consistency: f64,
+    pub total_students: usize,
+}
+
+#[wasm_bindgen]
+pub fn analyze_performance_patterns(
+    grades_json: &str,
+    _assignments_json: &str,
+) -> Result<String, JsValue> {
+    // Parse input data
+    let grades: Vec<Grade> = serde_json::from_str(grades_json)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse grades: {}", e)))?;
+    
+    // Group grades by student
+    let mut student_grades: std::collections::HashMap<String, Vec<&Grade>> = 
+        std::collections::HashMap::new();
+    
+    for grade in &grades {
+        student_grades
+            .entry(grade.student_id.clone())
+            .or_insert_with(Vec::new)
+            .push(grade);
+    }
+    
+    // Analyze each student's patterns
+    let mut student_patterns: Vec<StudentPattern> = Vec::new();
+    let mut all_consistency_scores: Vec<f64> = Vec::new();
+    
+    for (student_id, student_grade_list) in student_grades.iter() {
+        let pattern = analyze_student_patterns(student_id, student_grade_list);
+        all_consistency_scores.push(pattern.consistency_score);
+        student_patterns.push(pattern);
+    }
+    
+    // Calculate class-level consistency
+    let class_consistency = if !all_consistency_scores.is_empty() {
+        all_consistency_scores.iter().sum::<f64>() / all_consistency_scores.len() as f64
+    } else {
+        0.0
+    };
+    
+    let result = PerformancePatternsResult {
+        total_students: student_patterns.len(),
+        class_consistency,
+        student_patterns,
+    };
+    
+    serde_json::to_string(&result)
+        .map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
+}
+
+// Analyze patterns for a single student
+fn analyze_student_patterns(student_id: &str, grades: &[&Grade]) -> StudentPattern {
+    if grades.len() < 2 {
+        return StudentPattern {
+            student_id: student_id.to_string(),
+            consistency_score: 0.0,
+            current_streak: 0,
+            longest_streak: 0,
+            patterns: vec![],
+        };
+    }
+    
+    // Convert to percentages
+    let scores: Vec<f64> = grades.iter()
+        .map(|g| (g.score / g.max_score) * 100.0)
+        .collect();
+    
+    // Calculate consistency (inverse of coefficient of variation)
+    let mean = calculate_mean(&scores);
+    let std_dev = calculate_std_deviation(&scores, mean);
+    let cv = if mean > 0.0 { std_dev / mean } else { 1.0 };
+    let consistency_score = (1.0 - cv.min(1.0)).max(0.0);
+    
+    // Detect streaks
+    let (current_streak, longest_streak) = detect_streaks(&scores);
+    
+    // Identify patterns
+    let mut patterns: Vec<PerformancePattern> = Vec::new();
+    
+    // Pattern 1: Consistency
+    if consistency_score >= 0.8 {
+        patterns.push(PerformancePattern {
+            pattern_type: "consistent".to_string(),
+            description: "Very consistent performance across assignments".to_string(),
+            confidence: consistency_score,
+        });
+    } else if consistency_score < 0.5 {
+        patterns.push(PerformancePattern {
+            pattern_type: "volatile".to_string(),
+            description: "Highly variable performance - scores fluctuate significantly".to_string(),
+            confidence: 1.0 - consistency_score,
+        });
+    }
+    
+    // Pattern 2: Streaks
+    if current_streak.abs() >= 3 {
+        if current_streak > 0 {
+            patterns.push(PerformancePattern {
+                pattern_type: "improving_streak".to_string(),
+                description: format!("Currently on a {}-assignment improving streak", current_streak),
+                confidence: 0.9,
+            });
+        } else {
+            patterns.push(PerformancePattern {
+                pattern_type: "declining_streak".to_string(),
+                description: format!("Currently on a {}-assignment declining streak", current_streak.abs()),
+                confidence: 0.9,
+            });
+        }
+    }
+    
+    StudentPattern {
+        student_id: student_id.to_string(),
+        consistency_score,
+        current_streak,
+        longest_streak,
+        patterns,
+    }
+}
+
+// Detect improving/declining streaks
+fn detect_streaks(scores: &[f64]) -> (i32, i32) {
+    if scores.len() < 2 {
+        return (0, 0);
+    }
+    
+    let mut current_streak: i32 = 0;
+    let mut longest_streak: i32 = 0;
+    let mut current_direction = 0; // 1 = improving, -1 = declining
+    
+    for i in 1..scores.len() {
+        let diff = scores[i] - scores[i - 1];
+        
+        if diff > 2.0 {
+            // Improving
+            if current_direction == 1 {
+                current_streak += 1;
+            } else {
+                current_streak = 1;
+                current_direction = 1;
+            }
+        } else if diff < -2.0 {
+            // Declining
+            if current_direction == -1 {
+                current_streak -= 1;
+            } else {
+                current_streak = -1;
+                current_direction = -1;
+            }
+        } else {
+            // Stable - reset
+            current_streak = 0;
+            current_direction = 0;
+        }
+        
+        if current_streak.abs() > longest_streak.abs() {
+            longest_streak = current_streak;
+        }
+    }
+    
+    (current_streak, longest_streak)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -702,6 +1108,82 @@ mod tests {
         
         let reliability = calculate_cronbachs_alpha(&grades, &assignments);
         assert!(reliability >= 0.0 && reliability <= 1.0);
+    }
+    
+    #[test]
+    fn test_learning_progression() {
+        // Test improving trend
+        let grades = vec![
+            Grade {
+                student_id: "S1".to_string(),
+                assignment_id: "A1".to_string(),
+                score: 60.0,
+                max_score: 100.0,
+                submitted_at: None,
+                due_date: None,
+            },
+            Grade {
+                student_id: "S1".to_string(),
+                assignment_id: "A2".to_string(),
+                score: 70.0,
+                max_score: 100.0,
+                submitted_at: None,
+                due_date: None,
+            },
+            Grade {
+                student_id: "S1".to_string(),
+                assignment_id: "A3".to_string(),
+                score: 80.0,
+                max_score: 100.0,
+                submitted_at: None,
+                due_date: None,
+            },
+        ];
+        
+        let grade_refs: Vec<&Grade> = grades.iter().collect();
+        let assignments = vec![];
+        
+        let metrics = calculate_progression_metrics(&grade_refs, &assignments);
+        
+        assert_eq!(metrics.overall_trend, "improving");
+        assert!(metrics.velocity > 0.0);
+    }
+    
+    #[test]
+    fn test_performance_patterns() {
+        let grades = vec![
+            Grade {
+                student_id: "S1".to_string(),
+                assignment_id: "A1".to_string(),
+                score: 80.0,
+                max_score: 100.0,
+                submitted_at: None,
+                due_date: None,
+            },
+            Grade {
+                student_id: "S1".to_string(),
+                assignment_id: "A2".to_string(),
+                score: 82.0,
+                max_score: 100.0,
+                submitted_at: None,
+                due_date: None,
+            },
+            Grade {
+                student_id: "S1".to_string(),
+                assignment_id: "A3".to_string(),
+                score: 81.0,
+                max_score: 100.0,
+                submitted_at: None,
+                due_date: None,
+            },
+        ];
+        
+        let grade_refs: Vec<&Grade> = grades.iter().collect();
+        
+        let pattern = analyze_student_patterns("S1", &grade_refs);
+        
+        assert!(pattern.consistency_score > 0.0);
+        assert!(pattern.consistency_score <= 1.0);
     }
 
 }

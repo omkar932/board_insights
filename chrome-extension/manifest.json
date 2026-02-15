@@ -3,15 +3,15 @@
   "name": "Sanketa - Educational Analytics",
   "version": "0.1.0",
   "description": "AI-powered educational analytics for Blackboard Learn",
-  "permissions": ["activeTab", "storage", "scripting"],
-  "host_permissions": ["*://*.blackboard.com/*", "*://*/webapps/gradebook/*"],
+  "permissions": ["activeTab", "storage", "scripting", "alarms"],
+  "host_permissions": ["*://*.blackboard.com/*", "*://*/webapps/gradebook/*", "http://localhost:8000/*"],
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
   "content_scripts": [
     {
-      "matches": ["*://*.blackboard.com/*", "*://*/webapps/gradebook/*"],
+      "matches": ["*://*.blackboard.com/*", "*://*/webapps/gradebook/*", "http://localhost:8000/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
@@ -37,5 +37,8 @@
       ],
       "matches": ["<all_urls>"]
     }
-  ]
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
 }

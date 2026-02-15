@@ -1,7 +1,42 @@
-// Sanketa Background Service Worker
-// Handles extension lifecycle and message passing
+import init, { 
+  analyze_early_intervention,
+  analyze_chapter_difficulty,
+  analyze_assessment_quality,
+  analyze_learning_progression,
+  analyze_performance_patterns
+} from './wasm/analytics_wasm.js';
 
 console.log("Sanketa background service worker loaded");
+
+// Global state for WASM readiness
+let wasmReady = false;
+const wasmInitializationPromise = (async () => {
+  try {
+    console.log('🔄 Starting WASM initialization...');
+    const wasmBgUrl = chrome.runtime.getURL('wasm/analytics_wasm_bg.wasm');
+    await init(wasmBgUrl);
+    wasmReady = true;
+    console.log('✅ WASM initialized successfully');
+  } catch (error) {
+    console.error('❌ Failed to initialize WASM:', error);
+  }
+})();
+
+async function ensureWasmLoaded() {
+  if (!wasmReady) {
+    await wasmInitializationPromise;
+  }
+  if (!wasmReady) {
+    throw new Error('WASM module not available');
+  }
+  return {
+    analyze_early_intervention,
+    analyze_chapter_difficulty,
+    analyze_assessment_quality,
+    analyze_learning_progression,
+    analyze_performance_patterns
+  };
+}
 
 // Listen for installation
 chrome.runtime.onInstalled.addListener((details) => {
@@ -103,23 +138,21 @@ function handleDataExtraction(data, sender) {
   });
 }
 
-// Handle insight computation
+// Update handleInsightComputation to use ensureWasmLoaded
 async function handleInsightComputation(data) {
   console.log('Computing insights for course:', data.courseId);
   
   try {
-    // Load WASM module
-    const wasm = await loadWasmModule();
+    // Ensure WASM is loaded before proceeding
+    const wasm = await ensureWasmLoaded();
     
     const insights = {
       earlyIntervention: await computeEarlyIntervention(data.gradebook, wasm),
       chapterDifficulty: await computeChapterDifficulty(data.gradebook, wasm),
       assessmentQuality: await computeAssessmentQuality(data.gradebook, wasm),
-      learningProgression: await computeLearningProgression(data.gradebook),
-      performancePatterns: await computePerformancePatterns(data.gradebook)
+      learningProgression: await computeLearningProgression(data.gradebook, wasm),
+      performancePatterns: await computePerformancePatterns(data.gradebook, wasm)
     };
-
-
     
     // Store computed insights
     chrome.storage.local.set({
@@ -136,159 +169,70 @@ async function handleInsightComputation(data) {
   }
 }
 
-// Load WASM module (cached)
-let wasmModule = null;
-
-async function loadWasmModule() {
-  if (wasmModule) {
-    return wasmModule;
-  }
-  
-  try {
-    // Import WASM module
-    const wasmUrl = chrome.runtime.getURL('wasm/analytics_wasm.js');
-    const { 
-      default: init, 
-      analyze_early_intervention,
-      analyze_chapter_difficulty,
-      analyze_assessment_quality
-    } = await import(wasmUrl);
-    
-    // Initialize WASM
-    await init();
-    
-    wasmModule = { 
-      analyze_early_intervention,
-      analyze_chapter_difficulty,
-      analyze_assessment_quality
-    };
-    console.log('WASM module loaded successfully');
-    
-    return wasmModule;
-  } catch (error) {
-    console.error('Failed to load WASM module:', error);
-    throw new Error('WASM module not available');
-  }
-}
-
-// Real Early Intervention using WASM
+// Helper functions updated to use passed-in wasm exports
 async function computeEarlyIntervention(gradebook, wasm) {
   try {
     if (!gradebook || !gradebook.grades || !gradebook.assignments) {
-      return {
-        high_risk: [],
-        medium_risk: [],
-        low_risk: [],
-        total_students: 0
-      };
+      return { high_risk: [], medium_risk: [], low_risk: [], total_students: 0 };
     }
-    
-    // Prepare data for WASM
-    const gradesJson = JSON.stringify(gradebook.grades);
-    const assignmentsJson = JSON.stringify(gradebook.assignments);
-    
-    // Call WASM function
-    const resultJson = wasm.analyze_early_intervention(gradesJson, assignmentsJson);
-    const result = JSON.parse(resultJson);
-    
-    console.log('Early Intervention analysis complete:', result);
-    return result;
+    const resultJson = wasm.analyze_early_intervention(JSON.stringify(gradebook.grades), JSON.stringify(gradebook.assignments));
+    return JSON.parse(resultJson);
   } catch (error) {
     console.error('Error in Early Intervention analysis:', error);
-    // Return empty result on error
-    return {
-      high_risk: [],
-      medium_risk: [],
-      low_risk: [],
-      total_students: 0
-    };
+    return { high_risk: [], medium_risk: [], low_risk: [], total_students: 0 };
   }
 }
 
-// Real Chapter Difficulty using WASM
 async function computeChapterDifficulty(gradebook, wasm) {
   try {
     if (!gradebook || !gradebook.grades || !gradebook.assignments) {
-      return {
-        chapters: [],
-        total_chapters: 0,
-        hardest_chapter: null,
-        easiest_chapter: null
-      };
+      return { chapters: [], total_chapters: 0, hardest_chapter: null, easiest_chapter: null };
     }
-    
-    // Prepare data for WASM
-    const gradesJson = JSON.stringify(gradebook.grades);
-    const assignmentsJson = JSON.stringify(gradebook.assignments);
-    
-    // Call WASM function
-    const resultJson = wasm.analyze_chapter_difficulty(gradesJson, assignmentsJson);
-    const result = JSON.parse(resultJson);
-    
-    console.log('Chapter Difficulty analysis complete:', result);
-    return result;
+    const resultJson = wasm.analyze_chapter_difficulty(JSON.stringify(gradebook.grades), JSON.stringify(gradebook.assignments));
+    return JSON.parse(resultJson);
   } catch (error) {
     console.error('Error in Chapter Difficulty analysis:', error);
-    // Return empty result on error
-    return {
-      chapters: [],
-      total_chapters: 0,
-      hardest_chapter: null,
-      easiest_chapter: null
-    };
+    return { chapters: [], total_chapters: 0, hardest_chapter: null, easiest_chapter: null };
   }
 }
 
-// Real Assessment Quality using WASM
 async function computeAssessmentQuality(gradebook, wasm) {
   try {
     if (!gradebook || !gradebook.grades || !gradebook.assignments) {
-      return {
-        reliability: 0,
-        reliability_rating: 'insufficient_data',
-        items: [],
-        problematic_items: [],
-        total_items: 0
-      };
+      return { reliability: 0, reliability_rating: 'insufficient_data', items: [], problematic_items: [], total_items: 0 };
     }
-    
-    // Prepare data for WASM
-    const gradesJson = JSON.stringify(gradebook.grades);
-    const assignmentsJson = JSON.stringify(gradebook.assignments);
-    
-    // Call WASM function
-    const resultJson = wasm.analyze_assessment_quality(gradesJson, assignmentsJson);
-    const result = JSON.parse(resultJson);
-    
-    console.log('Assessment Quality analysis complete:', result);
-    return result;
+    const resultJson = wasm.analyze_assessment_quality(JSON.stringify(gradebook.grades), JSON.stringify(gradebook.assignments));
+    return JSON.parse(resultJson);
   } catch (error) {
     console.error('Error in Assessment Quality analysis:', error);
-    // Return empty result on error
-    return {
-      reliability: 0,
-      reliability_rating: 'error',
-      items: [],
-      problematic_items: [],
-      total_items: 0
-    };
+    return { reliability: 0, reliability_rating: 'error', items: [], problematic_items: [], total_items: 0 };
   }
 }
 
-// Placeholder functions for remaining insights
-
-
-async function computeLearningProgression(gradebook) {
-  return {
-    trend: 'stable',
-    velocity: 0
-  };
+async function computeLearningProgression(gradebook, wasm) {
+  try {
+    if (!gradebook || !gradebook.grades || !gradebook.assignments) {
+      return { overall_trend: 'insufficient_data', velocity: 0, class_velocity: 0, class_average_trend: 'unknown', student_progressions: [] };
+    }
+    const resultJson = wasm.analyze_learning_progression(JSON.stringify(gradebook.grades), JSON.stringify(gradebook.assignments));
+    return JSON.parse(resultJson);
+  } catch (error) {
+    console.error('Error in Learning Progression analysis:', error);
+    return { overall_trend: 'error', velocity: 0, class_velocity: 0, class_average_trend: 'unknown', student_progressions: [] };
+  }
 }
 
-async function computePerformancePatterns(gradebook) {
-  return {
-    patterns: []
-  };
+async function computePerformancePatterns(gradebook, wasm) {
+  try {
+    if (!gradebook || !gradebook.grades || !gradebook.assignments) {
+      return { student_patterns: [], class_consistency: 0, total_students: 0 };
+    }
+    const resultJson = wasm.analyze_performance_patterns(JSON.stringify(gradebook.grades), JSON.stringify(gradebook.assignments) || "[]");
+    return JSON.parse(resultJson);
+  } catch (error) {
+    console.error('Error in Performance Patterns analysis:', error);
+    return { student_patterns: [], class_consistency: 0, total_students: 0 };
+  }
 }
 
 

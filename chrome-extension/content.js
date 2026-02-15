@@ -10,6 +10,7 @@ function detectGradebookPage() {
   // Check for gradebook URL patterns
   const isGradebook = url.includes('/webapps/gradebook/') || 
                       url.includes('/ultra/courses/') ||
+                      url.includes('mock-blackboard.html') ||
                       document.querySelector('[id*="gradebook"]') !== null;
   
   if (isGradebook) {
@@ -51,6 +52,10 @@ function extractCourseContext() {
 
 // Extract course ID from URL or page
 function extractCourseId() {
+  // Try mock page ID first
+  const mockId = document.getElementById('courseId');
+  if (mockId) return mockId.textContent.trim();
+
   // Try URL first
   const urlMatch = window.location.href.match(/course_id=([^&]+)/);
   if (urlMatch) return urlMatch[1];
@@ -71,6 +76,10 @@ function extractCourseId() {
 
 // Extract course name
 function extractCourseName() {
+  // Try mock page name first
+  const mockName = document.getElementById('courseName');
+  if (mockName) return mockName.textContent.trim();
+
   // Try page title
   const titleElement = document.querySelector('h1.page-title, .course-title, #courseMenuPalette_paletteTitleHeading');
   if (titleElement) return titleElement.textContent.trim();
@@ -263,54 +272,89 @@ async function extractGradebookData() {
   try {
     console.log('Extracting gradebook data...');
     
-    // This is a placeholder - actual implementation will depend on Blackboard's structure
-    // For now, we'll create mock data
+    // Parse the HTML table
+    const table = document.getElementById('gradebookTable');
+    if (!table) {
+      throw new Error('Gradebook table not found');
+    }
+    
+    const headers = Array.from(table.querySelectorAll('thead th')).map(th => th.textContent.trim());
+    const rows = Array.from(table.querySelectorAll('tbody tr'));
+    
+    // assignments are columns 3 onwards (0-indexed)
+    // Format: "Quiz 1 (100)" -> name: "Quiz 1", max: 100
+    const assignments = headers.slice(2).map((header, index) => {
+      const match = header.match(/(.*)\((\d+)\)/);
+      return {
+        id: `A${index + 1}`,
+        name: match ? match[1].trim() : header,
+        max_score: match ? parseFloat(match[2]) : 100,
+        due_date: null
+      };
+    });
+    
+    const grades = [];
+    const students = [];
+    
+    rows.forEach((row, rowIndex) => {
+      const cells = row.querySelectorAll('td');
+      const lastName = cells[0].textContent.trim();
+      const firstName = cells[1].textContent.trim();
+      const studentId = `S${rowIndex + 1}`;
+      
+      students.push({
+        id: studentId,
+        name: `${firstName} ${lastName}`
+      });
+      
+      // Process grade cells
+      cells.forEach((cell, cellIndex) => {
+        if (cellIndex < 2) return; // Skip name columns
+        
+        const assignmentIndex = cellIndex - 2;
+        const assignment = assignments[assignmentIndex];
+        const scoreText = cell.textContent.trim();
+        const score = parseFloat(scoreText) || 0;
+        
+        grades.push({
+          student_id: studentId,
+          assignment_id: assignment.id,
+          score: score,
+          max_score: assignment.max_score,
+          submitted_at: new Date().toISOString(),
+          due_date: null
+        });
+      });
+    });
     
     const gradebookData = {
-      courseId: extractCourseId(),
-      courseName: extractCourseName(),
-      students: extractStudents(),
-      assignments: extractAssignments(),
-      grades: extractGrades(),
+      courseId: extractCourseId() || 'MOCK_101',
+      courseName: extractCourseName() || 'Mock Course',
+      students,
+      assignments,
+      grades,
       extractedAt: new Date().toISOString()
     };
     
     console.log('Gradebook data extracted:', gradebookData);
     
-    // Send to background for storage
-    chrome.runtime.sendMessage({
-      type: 'EXTRACT_DATA',
-      data: gradebookData
+    // Compute insights (send wrapper object expected by background)
+    const insights = await computeInsights({
+      courseId: gradebookData.courseId,
+      gradebook: gradebookData
     });
-    
-    // Compute insights
-    const insights = await computeInsights(gradebookData);
     
     // Display insights
     displayInsights(insights);
     
   } catch (error) {
     console.error('Error extracting gradebook data:', error);
-    displayError(error.message);
+    // fallback to display error in panel
+    const content = document.getElementById('sanketa-panel-content');
+    if(content) {
+      content.innerHTML = `<div style="padding:20px; color:red">Error: ${error.message}</div>`;
+    }
   }
-}
-
-// Extract student list (placeholder)
-function extractStudents() {
-  // TODO: Implement actual extraction from Blackboard DOM
-  return [];
-}
-
-// Extract assignment list (placeholder)
-function extractAssignments() {
-  // TODO: Implement actual extraction from Blackboard DOM
-  return [];
-}
-
-// Extract grades (placeholder)
-function extractGrades() {
-  // TODO: Implement actual extraction from Blackboard DOM
-  return [];
 }
 
 // Compute insights
@@ -340,8 +384,8 @@ function displayInsights(insights) {
       
       <div class="insight-card">
         <h4>🚨 Early Intervention</h4>
-        <p>High Risk: ${insights.earlyIntervention.highRisk.length} students</p>
-        <p>Medium Risk: ${insights.earlyIntervention.mediumRisk.length} students</p>
+        <p>High Risk: ${insights.earlyIntervention.high_risk.length} students</p>
+        <p>Medium Risk: ${insights.earlyIntervention.medium_risk.length} students</p>
       </div>
       
       <div class="insight-card">
@@ -356,12 +400,12 @@ function displayInsights(insights) {
       
       <div class="insight-card">
         <h4>📊 Learning Progression</h4>
-        <p>Trend: ${insights.learningProgression.trend}</p>
+        <p>Trend: ${insights.learningProgression.class_average_trend}</p>
       </div>
       
       <div class="insight-card">
         <h4>🔍 Performance Patterns</h4>
-        <p>${insights.performancePatterns.patterns.length} patterns detected</p>
+        <p>${insights.performancePatterns.student_patterns.length} patterns detected</p>
       </div>
     </div>
     
