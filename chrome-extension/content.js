@@ -96,7 +96,9 @@ function extractCourseName() {
 // Global state for current view
 let currentInsightsData = null;
 let currentStudentsData = null;
+let currentGradebookData = null;
 let currentView = 'summary';
+let selectedStudentId = null;
 
 // Inject Sanketa UI into the page
 function injectSanketaUI() {
@@ -146,6 +148,9 @@ function injectSanketaUI() {
     }
     #sanketa-panel.open { right: 0; }
     #sanketa-panel.expanded { width: 800px; right: 0; }
+    
+    .s-student-row { cursor: pointer; transition: background 0.2s; }
+    .s-student-row:hover { background: #f1f5f9 !important; }
     
     .s-header {
       padding: 20px 24px;
@@ -236,7 +241,7 @@ function openSanketaPanel() {
           <button id="sanketa-back-btn" class="s-btn-icon" style="display:none;" title="Back to Summary">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
           </button>
-          <h2 id="sanketa-panel-title">Sanketa</h2>
+          <h2 id="sanketa-panel-title">BoardInsight</h2>
         </div>
         <div class="s-header-actions">
           <button id="sanketa-panel-close" class="s-btn-icon" title="Close Panel">
@@ -256,6 +261,14 @@ function openSanketaPanel() {
     document.getElementById('sanketa-panel-close').onclick = () => panel.classList.remove('open', 'expanded');
     document.getElementById('sanketa-back-btn').onclick = () => setView('summary');
     
+    // Event delegation for student links
+    panel.addEventListener('click', (e) => {
+      const studentRow = e.target.closest('.s-student-row');
+      if (studentRow && studentRow.dataset.studentId) {
+        setView('student', studentRow.dataset.studentId);
+      }
+    });
+
     // Inject spin animation
     const spinStyle = document.createElement('style');
     spinStyle.textContent = '@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }';
@@ -271,7 +284,7 @@ function openSanketaPanel() {
 }
 
 // View Switching
-function setView(view) {
+function setView(view, studentId = null) {
   currentView = view;
   const panel = document.getElementById('sanketa-panel');
   const title = document.getElementById('sanketa-panel-title');
@@ -279,12 +292,20 @@ function setView(view) {
   
   if (view === 'report') {
     panel.classList.add('expanded');
-    title.textContent = 'Full Analysis Report';
+    title.textContent = 'Teaching Excellence Dashboard';
     backBtn.style.display = 'flex';
+    backBtn.onclick = () => setView('summary');
     renderDetailedReport(currentInsightsData, currentStudentsData);
+  } else if (view === 'student') {
+    selectedStudentId = studentId;
+    panel.classList.remove('expanded');
+    title.textContent = 'Individual Performance Profile';
+    backBtn.style.display = 'flex';
+    backBtn.onclick = () => setView('report');
+    renderStudentDetail(studentId, currentInsightsData, currentStudentsData);
   } else {
     panel.classList.remove('expanded');
-    title.textContent = 'Sanketa Summary';
+    title.textContent = 'Executive Summary';
     backBtn.style.display = 'none';
     renderSummary(currentInsightsData, currentStudentsData);
   }
@@ -354,6 +375,7 @@ async function extractGradebookData() {
 
     currentInsightsData = insights;
     currentStudentsData = students;
+    currentGradebookData = gradebookData;
     setView('summary');
 
   } catch (error) {
@@ -381,43 +403,61 @@ async function computeInsights(gradebookData) {
 function renderSummary(insights, students) {
   const content = document.getElementById('sanketa-panel-content');
   const reliabilityColor = insights.assessmentQuality.reliability > 0.8 ? '#10b981' : (insights.assessmentQuality.reliability > 0.6 ? '#f59e0b' : '#ef4444');
-
   const atRiskCount = insights.earlyIntervention.high_risk.length + insights.earlyIntervention.medium_risk.length;
+  const hardestChapter = insights.chapterDifficulty.hardest_chapter || 'Calculated Soon';
 
   content.innerHTML = `
-    <div style="margin-bottom: 24px;">
-      <h3 style="margin:0 0 16px 0; font-size:14px; text-transform:uppercase; color:#64748b; font-weight:700;">Class Performance</h3>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-        <div class="s-card" style="margin-bottom:0; background:#f8fafc;">
-          <div style="font-size:10px; font-weight:700; color:#94a3b8; margin-bottom:4px;">RELIABILITY</div>
+    <div style="margin-bottom: 32px;">
+      <h3 style="margin:0 0 16px 0; font-size:12px; text-transform:uppercase; color:#94a3b8; font-weight:800; letter-spacing:0.05em;">Executive Dashboard</h3>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+        <div class="s-card" style="margin-bottom:0; background:#f8fafc; border-bottom: 4px solid ${reliabilityColor}; padding:16px;">
+          <div style="font-size:10px; font-weight:700; color:#64748b; margin-bottom:4px;">RELIABILITY INDEX</div>
           <div style="font-size:24px; font-weight:800; color:${reliabilityColor};">${(insights.assessmentQuality.reliability * 100).toFixed(0)}%</div>
         </div>
-        <div class="s-card" style="margin-bottom:0; background:#f8fafc;">
-          <div style="font-size:10px; font-weight:700; color:#94a3b8; margin-bottom:4px;">AT RISK</div>
+        <div class="s-card" style="margin-bottom:0; background:#f8fafc; border-bottom: 4px solid #ef4444; padding:16px;">
+          <div style="font-size:10px; font-weight:700; color:#64748b; margin-bottom:4px;">INTERVENTION ALERTS</div>
           <div style="font-size:24px; font-weight:800; color:#ef4444;">${atRiskCount}</div>
         </div>
       </div>
     </div>
 
-    <div style="margin-bottom: 24px;">
-      <h3 style="margin:0 0 16px 0; font-size:14px; text-transform:uppercase; color:#64748b; font-weight:700;">Insights Summary</h3>
-      <div class="s-card" style="border-left: 4px solid #ef4444; margin-bottom:12px;">
-        <h4 style="margin:0; font-size:14px;">🔥 Early Intervention</h4>
-        <p style="margin-top:8px;">${atRiskCount > 0 ? `<b>${atRiskCount}</b> students are showing significant performance variations.` : 'Stability detected across all student performance tracks.'}</p>
+    <div style="margin-bottom: 32px;">
+      <h3 style="margin:0 0 16px 0; font-size:12px; text-transform:uppercase; color:#94a3b8; font-weight:800; letter-spacing:0.05em;">Teaching Excellence Insights</h3>
+      
+      <div class="s-card" style="border-left: 4px solid #ef4444; margin-bottom:12px; padding:16px;">
+        <h4 style="margin:0; font-size:14px; font-weight:700;">🎯 Early Intervention Need</h4>
+        <p style="margin-top:8px; font-size:13px; color:#475569; line-height:1.5;">${atRiskCount > 0 ? `<b>${atRiskCount}</b> students flagged for immediate outreach based on performance volatility.` : 'No critical intervention triggers detected at this time.'}</p>
+      </div>
+
+      <div class="s-card" style="border-left: 4px solid #f59e0b; margin-bottom:12px; padding:16px;">
+        <h4 style="margin:0; font-size:14px; font-weight:700;">🧩 Knowledge Gap Identification</h4>
+        <p style="margin-top:8px; font-size:13px; color:#475569; line-height:1.5;">Students are showing lowest mastery in <b>${hardestChapter}</b>. Consider a review session for this module.</p>
+      </div>
+
+      <div class="s-card" style="border-left: 4px solid #10b981; margin-bottom:12px; padding:16px;">
+        <h4 style="margin:0; font-size:14px; font-weight:700;">🚀 Learning Progression</h4>
+        <p style="margin-top:8px; font-size:13px; color:#475569; line-height:1.5;">Class velocity is <b>+${insights.learningProgression.class_velocity.toFixed(1)}</b>. Trajectory remains <b>${insights.learningProgression.class_average_trend}</b>.</p>
       </div>
       
-      <div id="open-full-report" class="s-card" style="cursor:pointer; background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); color:white; border:none; text-align:center; transition: transform 0.2s;">
-        <h4 style="margin:0; color:white; justify-content:center; gap:12px;">
-           <span>Analyze Full Report</span> 
-           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
+      <div id="open-full-report" class="s-card" style="cursor:pointer; background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); color:white; border:none; text-align:center; transition: all 0.2s; padding: 24px; margin-top:20px;">
+        <h4 style="margin:0; color:white; justify-content:center; gap:12px; font-size:16px; font-weight:700;">
+           <span>Access Full Analytics Report</span> 
+           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
         </h4>
+        <p style="margin: 8px 0 0 0; font-size:12px; color:rgba(255,255,255,0.7);">Analyze grade distributions, difficulty heatmaps, and prediction models</p>
       </div>
     </div>
   `;
   
   const reportBtn = document.getElementById('open-full-report');
-  reportBtn.onmouseover = () => reportBtn.style.transform = 'translateY(-2px)';
-  reportBtn.onmouseout = () => reportBtn.style.transform = 'translateY(0)';
+  reportBtn.onmouseover = () => {
+    reportBtn.style.transform = 'translateY(-2px)';
+    reportBtn.style.boxShadow = '0 10px 25px rgba(30, 27, 75, 0.4)';
+  };
+  reportBtn.onmouseout = () => {
+    reportBtn.style.transform = 'translateY(0)';
+    reportBtn.style.boxShadow = 'none';
+  };
   reportBtn.onclick = () => setView('report');
 }
 
@@ -425,6 +465,18 @@ function renderSummary(insights, students) {
 function renderDetailedReport(insights, students) {
   const content = document.getElementById('sanketa-panel-content');
   
+  // Grade Distribution Calculation
+  const buckets = { '90-100': 0, '80-89': 0, '70-79': 0, '60-69': 0, '<60': 0 };
+  insights.learningProgression.student_progressions.forEach(p => {
+    const perf = p.metrics.current_performance;
+    if (perf >= 90) buckets['90-100']++;
+    else if (perf >= 80) buckets['80-89']++;
+    else if (perf >= 70) buckets['70-79']++;
+    else if (perf >= 60) buckets['60-69']++;
+    else buckets['<60']++;
+  });
+  const maxBucket = Math.max(...Object.values(buckets));
+
   const studentRows = students.map(student => {
     const risk = insights.earlyIntervention.high_risk.find(r => r.student_id === student.id) || 
                  insights.earlyIntervention.medium_risk.find(r => r.student_id === student.id) ||
@@ -432,8 +484,8 @@ function renderDetailedReport(insights, students) {
     const progression = insights.learningProgression.student_progressions.find(p => p.student_id === student.id);
     
     return `
-      <tr>
-        <td style="font-weight:600; color:#1e293b;">${student.name}</td>
+      <tr class="s-student-row" data-student-id="${student.id}">
+        <td style="font-weight:700; color:#4338ca; padding-left:24px;">${student.name}</td>
         <td>
           <span style="padding:4px 10px; border-radius:12px; font-size:10px; font-weight:800; text-transform:uppercase; display:inline-block;
             background:${risk.risk_level === 'high' ? '#fee2e2' : (risk.risk_level === 'medium' ? '#fef3c7' : '#d1fae5')}; 
@@ -445,45 +497,219 @@ function renderDetailedReport(insights, students) {
           ${progression.metrics.velocity >= 0 ? '+' : ''}${progression.metrics.velocity.toFixed(1)}
         </td>
         <td style="font-weight:600;">${progression.metrics.projected_performance.toFixed(0)}%</td>
-        <td style="font-size:12px; color:#64748b; line-height:1.4; max-width:200px;">${risk.recommendations[0]}</td>
+        <td style="font-size:12px; color:#64748b; line-height:1.4; max-width:200px; padding-right:24px;">${risk.recommendations[0]}</td>
       </tr>
     `;
   }).join('');
 
   content.innerHTML = `
-    <div style="display:grid; grid-template-columns: 1fr; gap:24px;">
-      <div>
-        <h3 style="margin:0 0 16px 0; font-size:14px; text-transform:uppercase; color:#64748b; font-weight:700;">Curriculum Difficulty Heatmap</h3>
-        <div class="s-card" style="padding:24px 32px;">
-           <div class="s-chart-row">
-             ${insights.chapterDifficulty.chapters.slice(0, 8).map(ch => `
-               <div class="s-bar" style="height:${ch.avg_score}%" data-val="${ch.avg_score.toFixed(0)}%"></div>
-             `).join('')}
-           </div>
-           <div style="display:flex; justify-content:space-between; margin-top:12px; font-size:10px; color:#94a3b8; font-weight:700; text-transform:uppercase;">
-             <span>Chapter 1</span>
-             <span>Chapter 8</span>
-           </div>
+    <div style="display:grid; grid-template-columns: 1fr; gap:32px;">
+      
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+        <div>
+          <h3 style="margin:0 0 16px 0; font-size:13px; text-transform:uppercase; color:#64748b; font-weight:700;">Chapter Difficulty Analysis</h3>
+          <div class="s-card" style="padding:20px;">
+             <div class="s-chart-row" style="height: 100px;">
+               ${insights.chapterDifficulty.chapters.slice(0, 6).map(ch => `
+                 <div class="s-bar" style="height:${ch.avg_score}%" data-val="${ch.avg_score.toFixed(0)}%"></div>
+               `).join('')}
+             </div>
+             <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:9px; color:#94a3b8; font-weight:700;">
+               <span>EASY</span>
+               <span>CHALLENGING</span>
+             </div>
+          </div>
+        </div>
+
+        <div>
+          <h3 style="margin:0 0 16px 0; font-size:13px; text-transform:uppercase; color:#64748b; font-weight:700;">Grade Distribution Analysis</h3>
+          <div class="s-card" style="padding:20px;">
+             <div class="s-chart-row" style="height: 100px; align-items: flex-end; gap:4px;">
+               ${Object.entries(buckets).map(([range, count]) => `
+                 <div class="s-bar" style="height:${(count / Math.max(1, maxBucket)) * 100}%; background:#a855f7;" data-val="${count}"></div>
+               `).reverse().join('')}
+             </div>
+             <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:9px; color:#94a3b8; font-weight:700;">
+               <span>F</span>
+               <span>A</span>
+             </div>
+          </div>
         </div>
       </div>
 
       <div>
-        <h3 style="margin:0 0 16px 0; font-size:14px; text-transform:uppercase; color:#64748b; font-weight:700;">Student Performance Matrix</h3>
-        <div class="s-card" style="padding:0; overflow:hidden;">
+        <h3 style="margin:0 0 16px 0; font-size:13px; text-transform:uppercase; color:#64748b; font-weight:700;">Improvement Trajectories & Predictive Analysis</h3>
+        <div class="s-card" style="padding:0; overflow:hidden; border:none; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05);">
           <table class="s-table">
             <thead>
-              <tr>
-                <th style="padding-left:24px;">Student</th>
-                <th>Risk</th>
-                <th>Velocity</th>
-                <th>Proj.</th>
-                <th style="padding-right:24px;">Recommendation</th>
+              <tr style="background: #f8fafc;">
+                <th style="padding-left:24px;">Individual Student</th>
+                <th>Early Intervention Alert</th>
+                <th>Progression Velocity</th>
+                <th>Predictive Forecast</th>
+                <th style="padding-right:24px;">Personalized Recommendation</th>
               </tr>
             </thead>
             <tbody>
               ${studentRows}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:16px;">
+          <div class="s-card" style="margin:0; text-align:center;">
+             <div style="font-size:10px; font-weight:700; color:#94a3b8; margin-bottom:8px;">ASSESSMENT QUALITY</div>
+             <div style="font-size:18px; font-weight:800; color:#6366f1;">${insights.assessmentQuality.reliability_rating.toUpperCase()}</div>
+          </div>
+          <div class="s-card" style="margin:0; text-align:center;">
+             <div style="font-size:10px; font-weight:700; color:#94a3b8; margin-bottom:8px;">CLASS MOMENTUM</div>
+             <div style="font-size:18px; font-weight:800; color:#10b981;">+${insights.learningProgression.class_velocity.toFixed(1)}</div>
+          </div>
+          <div class="s-card" style="margin:0; text-align:center;">
+             <div style="font-size:10px; font-weight:700; color:#94a3b8; margin-bottom:8px;">CONSISTENCY INDEX</div>
+             <div style="font-size:18px; font-weight:800; color:#a855f7;">${(insights.performancePatterns.class_consistency * 100).toFixed(0)}%</div>
+          </div>
+      </div>
+    </div>
+  `;
+}
+
+// Render Individual Student Detail View
+function renderStudentDetail(studentId, insights, students) {
+  const content = document.getElementById('sanketa-panel-content');
+  const student = students.find(s => s.id === studentId);
+  const risk = insights.earlyIntervention.high_risk.find(r => r.student_id === studentId) || 
+               insights.earlyIntervention.medium_risk.find(r => r.student_id === studentId) ||
+               insights.earlyIntervention.low_risk.find(r => r.student_id === studentId);
+  const progression = insights.learningProgression.student_progressions.find(p => p.student_id === studentId);
+  const patterns = insights.performancePatterns.student_patterns.find(p => p.student_id === studentId);
+  
+  // 1. Dynamic Historical Path from real grades
+  const studentGrades = currentGradebookData.grades
+    .filter(g => g.student_id === studentId)
+    .map(g => (g.score / g.max_score) * 100);
+
+  // Use real grades if available, fallback to 0
+  const historicalPath = studentGrades.length > 0 ? studentGrades : [0];
+  const maxChartVal = Math.max(...historicalPath, 100);
+  const minChartVal = Math.min(...historicalPath, 0);
+  const chartRange = (maxChartVal - minChartVal) || 1;
+
+  const points = historicalPath.map((val, i) => {
+    const x = (i / Math.max(1, historicalPath.length - 1)) * 100;
+    const y = 100 - ((val - minChartVal) / chartRange) * 80 - 10;
+    return `${x},${y}`;
+  }).join(' ');
+
+  // 2. Mastery Breakdown (Student vs Class)
+  // Mapping assignments to chapters loosely based on name or order for the breakdown
+  const masteryBreakdown = insights.chapterDifficulty.chapters.slice(0, 4).map(ch => {
+    // Logic to find student's performance in this specific chapter
+    const chapterGrades = currentGradebookData.grades.filter(g => {
+      const assignment = currentGradebookData.assignments.find(a => a.id === g.assignment_id);
+      if (!assignment || !assignment.name || !ch || !ch.name) return false;
+      const chName = ch.name;
+      const chShortName = chName.replace('Chapter ', 'Ch ');
+      return g.student_id === studentId && (assignment.name.includes(chName) || assignment.name.includes(chShortName));
+    });
+
+    const studentAvg = chapterGrades.length > 0 
+      ? chapterGrades.reduce((acc, curr) => acc + (curr.score / curr.max_score * 100), 0) / chapterGrades.length 
+      : 0;
+    
+    return {
+      name: ch.name,
+      studentScore: studentAvg,
+      classScore: ch.avg_score,
+      delta: studentAvg - ch.avg_score
+    };
+  });
+
+  content.innerHTML = `
+    <div style="display:grid; grid-template-columns: 1fr; gap:24px;">
+      <div class="s-card" style="background: linear-gradient(135deg, #1e1b4b 0%, #4338ca 100%); color:white; border:none; padding:24px;">
+        <div style="font-size:10px; font-weight:800; letter-spacing:0.1em; opacity:0.8; margin-bottom:8px;">STUDENT PERFORMANCE PROFILE</div>
+        <h2 style="margin:0; font-size:24px; color:white;">${student.name}</h2>
+        <div style="display:flex; gap:24px; margin-top:16px;">
+          <div>
+            <div style="font-size:10px; opacity:0.8;">CURRENT MASTERY</div>
+            <div style="font-size:20px; font-weight:800; color:#10b981;">${progression.metrics.current_performance.toFixed(1)}%</div>
+          </div>
+          <div>
+            <div style="font-size:10px; opacity:0.8;">PROGRESION PACE</div>
+            <div style="font-size:20px; font-weight:800; color:${progression.metrics.velocity >= 0 ? '#10b981' : '#f43f5e'};">
+              ${progression.metrics.velocity >= 0 ? '+' : ''}${progression.metrics.velocity.toFixed(1)}
+            </div>
+          </div>
+          <div>
+            <div style="font-size:10px; opacity:0.8;">CONSISTENCY</div>
+            <div style="font-size:20px; font-weight:800;">${(patterns.consistency_score * 100).toFixed(0)}%</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="s-card" style="padding:24px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+           <h3 style="margin:0; font-size:12px; text-transform:uppercase; color:#64748b; font-weight:800; letter-spacing:0.05em;">Real-Time Improvement Trajectory</h3>
+           <span style="font-size:10px; font-weight:700; color:#10b981; background:#d1fae5; padding:2px 8px; border-radius:10px;">DATA-DRIVEN</span>
+        </div>
+        <div style="height:120px; position:relative; margin-bottom:12px;">
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%; height:100%; overflow:visible;">
+            <polyline fill="none" stroke="#6366f1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${points}" />
+            ${historicalPath.map((val, i) => {
+              const x = (i / Math.max(1, historicalPath.length - 1)) * 100;
+              const y = 100 - ((val - minChartVal) / chartRange) * 80 - 10;
+              return `<circle cx="${x}" cy="${y}" r="3" fill="${i === historicalPath.length - 1 ? '#ef4444' : '#6366f1'}" />`;
+            }).join('')}
+          </svg>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:9px; color:#94a3b8; font-weight:700;">
+          <span>STARTING POINT</span>
+          <span>RECENT PERFORMANCE</span>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns: 1fr; gap:16px;">
+        <div class="s-card" style="padding:20px;">
+          <h3 style="margin:0 0 16px 0; font-size:12px; text-transform:uppercase; color:#64748b; font-weight:800;">Curriculum Gap Analysis (Student vs Class)</h3>
+          <div style="display:flex; flex-direction:column; gap:12px;">
+            ${masteryBreakdown.filter(m => m.studentScore > 0).map(m => `
+              <div style="display:flex; align-items:center; gap:12px;">
+                <div style="font-size:11px; font-weight:700; color:#475569; width:80px;">${m.name}</div>
+                <div style="flex:1; height:8px; background:#f1f5f9; border-radius:4px; overflow:hidden; position:relative;">
+                  <div style="position:absolute; height:100%; background:#94a3b8; width:${m.classScore}%; opacity:0.3;"></div>
+                  <div style="position:absolute; height:100%; background:#6366f1; width:${m.studentScore}%;"></div>
+                </div>
+                <div style="font-size:11px; font-weight:800; color:${m.delta >= 0 ? '#10b981' : '#f43f5e'}; width:60px; text-align:right;">
+                  ${m.delta >= 0 ? '+' : ''}${m.delta.toFixed(0)}% diff
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <div>
+          <h3 style="margin:0 0 16px 0; font-size:12px; text-transform:uppercase; color:#64748b; font-weight:800;">Faculty Insight reasoning</h3>
+          ${patterns.patterns.length > 0 ? patterns.patterns.map(p => `
+            <div class="s-card" style="border-left: 4px solid #f43f5e; margin-bottom:12px;">
+              <h4 style="margin:0; font-size:14px; font-weight:700;">⚠️ ${p.pattern_type.replace('_', ' ').toUpperCase()} Detected</h4>
+              <p style="margin-top:8px; font-size:13px; color:#475569; line-height:1.5;">${p.description}</p>
+            </div>
+          `).join('') : `
+            <div class="s-card" style="border-left: 4px solid #10b981; margin-bottom:12px;">
+              <h4 style="margin:0; font-size:14px; font-weight:700;">✅ Stable Progression</h4>
+              <p style="margin-top:8px; font-size:13px; color:#475569; line-height:1.5;">No negative performance patterns detected. Student is maintaining consistent output relative to class benchmarks.</p>
+            </div>
+          `}
+          
+          <div class="s-card" style="border-left: 4px solid #6366f1;">
+            <h4 style="margin:0; font-size:14px; font-weight:700;">🔮 Outcome Forecasting</h4>
+            <p style="margin-top:8px; font-size:13px; color:#475569; line-height:1.5;">
+              By analyzing <b>${historicalPath.length}</b> data points, our engine calculates an <b>${insights.learningProgression.class_average_trend}</b> trend for this individual. 
+              Projected session mastery: <b>${progression.metrics.projected_performance.toFixed(0)}%</b>.
+            </p>
+          </div>
         </div>
       </div>
     </div>
